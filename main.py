@@ -1,49 +1,94 @@
 from flask import Flask, request, jsonify
+import sqlite3
+import os
+from werkzeug.utils import secure_filename
 
 app = Flask(__name__)
 
-# I need to understand better the concept of the routes
+# SQLite database connection
+conn = sqlite3.connect('smart_document_analyzer.db')
+c = conn.cursor()
 
-@app.route('/', methods=['POST'])
-def CreateProject():
-    input_data = request.get_json()
-    user_id = input_data.get('user_id')
-    project_type = input_data.get('project_type')
-    project_name = input_data.get('project_name')
-    return jsonify({'projectId': 'uuid', 'projectType': project_type, 'projectName': project_name}), 200
+# Create tables if not exist
+c.execute('''CREATE TABLE IF NOT EXISTS Users (
+                UserID INTEGER PRIMARY KEY,
+                Username TEXT,
+                Password TEXT,
+                Email TEXT,
+                Role TEXT
+            )''')
 
-@app.route('/', methods=['POST'])
-def CreateDatasets():
-    input_data = request.get_json()
-    project_id = input_data.get('projectId')
-    dataset_type = input_data.get('datasetType')
-    dataset_name = input_data.get('datasetName')
-    return jsonify({'datasetId': 'uuid', 'projectId': project_id, 'datasetType': dataset_type, 'datasetName': dataset_name}), 200
+c.execute('''CREATE TABLE IF NOT EXISTS UploadedFiles (
+                FileID INTEGER PRIMARY KEY,
+                UserID INTEGER,
+                FileName TEXT,
+                FileType TEXT,
+                FileLocation TEXT,
+                UploadDateTime TEXT,
+                FOREIGN KEY (UserID) REFERENCES Users(UserID)
+            )''')
 
-@app.route('/', methods=['POST'])
-def StartTraining():
-    input_data = request.get_json()
-    dataset_id = input_data.get('datasetId')
-    training_parameters = input_data.get('trainingParameters')
-    return jsonify({'trainingJobId': 'uuid'}), 200
+# Define constants
+UPLOAD_FOLDER = 'uploads'
+ALLOWED_EXTENSIONS = {'txt', 'pdf', 'doc', 'docx'}
+app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 
-@app.route('/', methods=['GET'])
-def StatusTraining():
-    input_data = request.get_json()
-    training_job_id = input_data.get('trainingJobId')
-    return jsonify({'trainingJobId': training_job_id, 'trainingJobStatus': 'status_here'}), 200
+# Helper functions
+def allowed_file(filename):
+    return '.' in filename and \
+           filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
-@app.route('/', methods=['POST'])
-def StopTraining():
-    input_data = request.get_json()
-    training_job_id = input_data.get('trainingJobId')
-    return jsonify({'trainingJobId': training_job_id}), 200
+# Define endpoints
+@app.route('/login', methods=['POST'])
+def login():
+    data = request.get_json()
+    username = data.get('username')
+    password = data.get('password')
 
-@app.route('/', methods=['GET'])
-def ResultsTraining():
-    input_data = request.get_json()
-    training_job_id = input_data.get('trainingJobId')
-    return jsonify({'trainingJobId': training_job_id, 'trainingJobStats': 'stats_here', 'trainedModelId': 'model_id'}), 200
+    # Check if username and password are provided
+    if not username or not password:
+        return jsonify({'error': 'Username and password are required'}), 400
+
+    # Query the database to check if the user exists
+    c.execute('SELECT * FROM Users WHERE Username=? AND Password=?', (username, password))
+    user = c.fetchone()
+
+    if user:
+        # Successful login
+        return jsonify({'message': 'Login successful', 'user_id': user[0]}), 200
+    else:
+        # Invalid credentials
+        return jsonify({'error': 'Invalid username or password'}), 401
+
+@app.route('/upload', methods=['POST'])
+def upload_file():
+    # Check if the POST request has the file part
+    if 'file' not in request.files:
+        return jsonify({'error': 'No file part'}), 400
+
+    file = request.files['file']
+
+    # Check if file is provided
+    if file.filename == '':
+        return jsonify({'error': 'No selected file'}), 400
+
+    # Check if the file type is allowed
+    if not allowed_file(file.filename):
+        return jsonify({'error': 'File type not allowed'}), 400
+
+    # Save the uploaded file to the designated folder
+    filename = secure_filename(file.filename)
+    file.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
+
+    # Save file details to the database
+    # Assuming UserID is obtained from the authentication process
+    user_id = request.form.get('user_id')
+    filename_db = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+    c.execute('INSERT INTO UploadedFiles (UserID, FileName, FileType, FileLocation) VALUES (?, ?, ?, ?)',
+              (user_id, filename, filename.split('.')[-1], filename_db))
+    conn.commit()
+
+    return jsonify({'message': 'File uploaded successfully', 'file_name': filename}), 200
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0')
+    app.run(debug=True)
