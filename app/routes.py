@@ -1,14 +1,10 @@
-# app/routes.py
-
 import os
 from flask import Blueprint, request, jsonify
 from bson.objectid import ObjectId
 from datetime import datetime
 from werkzeug.utils import secure_filename
 from .utils import allowed_file
-from app import app, db, uploads
-from flask_uploads import UploadNotAllowed
-
+from app import app, db, uploads, celery
 
 blueprint = Blueprint('api', __name__)
 
@@ -88,6 +84,8 @@ def create_document():
                 'date': datetime.utcnow()
             }
             result = documents_collection.insert_one(document_data)
+            # Queue the document for processing asynchronously
+            process_document.delay(str(result.inserted_id))
             return jsonify({'message': 'Document created successfully', 'document_id': str(result.inserted_id)}), 201
         except UploadNotAllowed:
             return jsonify({'error': 'File type not allowed'}), 400
