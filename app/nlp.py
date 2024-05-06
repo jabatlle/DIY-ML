@@ -13,7 +13,7 @@ class NLPProcessor:
         self.text = text
         self.summary = None
         self.keywords = set()
-        self.polarity = 0
+        self.sentiment = 0
 
     # Summarize the text
     def summarize(self):
@@ -41,12 +41,12 @@ class NLPProcessor:
             print(e)
             return None
 
-    # Analyze polarity
-    def analyze_polarity(self):
+    # Analyze sentiment
+    def analyze_sentiment(self):
         try:
             analysis = TextBlob(self.text)
-            self.polarity = analysis.sentiment.polarity
-            return self.polarity
+            self.sentiment = analysis.sentiment.sentiment
+            return self.sentiment
         except Exception as e:
             print(e)
             return None
